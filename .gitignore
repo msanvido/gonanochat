@@ -1,0 +1,17 @@
+# Binary
+gonanochat
+
+# Checkpoints and data
+checkpoints/
+model_export/
+*.bin
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude
+.claude/
