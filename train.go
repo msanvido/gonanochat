@@ -155,6 +155,19 @@ func Train(cfg TrainConfig) {
 		}
 	}
 
+	// Validate: check max token ID fits in the vocab
+	maxTok := 0
+	for _, t := range trainData.data {
+		if t > maxTok {
+			maxTok = t
+		}
+	}
+	if maxTok >= cfg.VocabSize {
+		log.Fatalf("Data contains token ID %d but vocab size is %d. "+
+			"Either re-tokenize with a smaller tokenizer, or set -vocab %d or higher.",
+			maxTok, cfg.VocabSize, maxTok+1)
+	}
+
 	// Create or load model
 	var model *GPT
 	if cfg.ResumeFrom != "" {
