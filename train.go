@@ -61,14 +61,14 @@ func DefaultTrainConfig() TrainConfig {
 	}
 }
 
-// TokenReader reads pre-tokenized data from a binary file of uint16 tokens.
+// TokenReader reads pre-tokenized data from a binary file (uint16 or uint32 tokens).
 type TokenReader struct {
-	data   []uint16
-	pos    int
-	rng    *rand.Rand
+	data []int
+	rng  *rand.Rand
 }
 
 // NewTokenReader loads tokenized data from a binary file.
+// File format: 4-byte header ("TK" + dtype byte + pad) followed by token data.
 func NewTokenReader(path string) (*TokenReader, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -80,14 +80,46 @@ func NewTokenReader(path string) (*TokenReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	numTokens := int(info.Size()) / 2 // uint16 = 2 bytes
+	fileSize := info.Size()
 
-	data := make([]uint16, numTokens)
-	if err := binary.Read(f, binary.LittleEndian, data); err != nil {
-		return nil, fmt.Errorf("read tokens: %w", err)
+	// Read 4-byte header: "TK" + dtype (2 or 4) + padding
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(f, header); err != nil {
+		return nil, fmt.Errorf("read header: %w", err)
+	}
+	if string(header[:2]) != "TK" {
+		return nil, fmt.Errorf("invalid token file (missing 'TK' magic). Re-run prepare_data.py to regenerate")
+	}
+	dtype := int(header[2]) // 2 = uint16, 4 = uint32
+	dataSize := fileSize - 4
+
+	var data []int
+	switch dtype {
+	case 2:
+		numTokens := int(dataSize / 2)
+		raw := make([]uint16, numTokens)
+		if err := binary.Read(f, binary.LittleEndian, raw); err != nil {
+			return nil, fmt.Errorf("read uint16 tokens: %w", err)
+		}
+		data = make([]int, numTokens)
+		for i, v := range raw {
+			data[i] = int(v)
+		}
+	case 4:
+		numTokens := int(dataSize / 4)
+		raw := make([]uint32, numTokens)
+		if err := binary.Read(f, binary.LittleEndian, raw); err != nil {
+			return nil, fmt.Errorf("read uint32 tokens: %w", err)
+		}
+		data = make([]int, numTokens)
+		for i, v := range raw {
+			data[i] = int(v)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported token dtype: %d (expected 2 or 4)", dtype)
 	}
 
-	log.Printf("Loaded %d tokens (%.1f MB) from %s", numTokens, float64(info.Size())/1e6, path)
+	log.Printf("Loaded %d tokens (uint%d, %.1f MB) from %s", len(data), dtype*8, float64(fileSize)/1e6, path)
 	return &TokenReader{data: data, rng: rand.New(rand.NewPCG(42, 0))}, nil
 }
 
@@ -98,9 +130,7 @@ func (tr *TokenReader) GetBatch(batchSize, seqLen int) [][]int {
 	for b := 0; b < batchSize; b++ {
 		start := tr.rng.IntN(maxStart)
 		seq := make([]int, seqLen+1)
-		for i := 0; i <= seqLen; i++ {
-			seq[i] = int(tr.data[start+i])
-		}
+		copy(seq, tr.data[start:start+seqLen+1])
 		batch[b] = seq
 	}
 	return batch

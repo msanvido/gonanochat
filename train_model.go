@@ -427,11 +427,13 @@ func (tg *TrainableGPT) Backward() {
 		}
 	}
 
-	// LMHead backward
+	// LMHead backward (pad gradient to paddedVocabSize to match LMHead weight shape)
+	paddedVocab := m.PaddedVocabSize
 	dXFinal := make([]float32, T*C)
 	dLMHead := tg.Grads["lm_head.weight"]
 	for t := 0; t < T; t++ {
-		dl := dLogitsCap[t*vocabSize : (t+1)*vocabSize]
+		dl := make([]float32, paddedVocab) // zero-padded
+		copy(dl, dLogitsCap[t*vocabSize:(t+1)*vocabSize])
 		xf := c.XFinal[t*C : (t+1)*C]
 		dx := LinearBackward(dl, m.LMHead, xf, dLMHead)
 		copy(dXFinal[t*C:(t+1)*C], dx)

@@ -1,0 +1,14 @@
+[project]
+name = "gonanochat-scripts"
+version = "0.1.0"
+description = "Python helper scripts for gonanochat (data preparation, model conversion)"
+requires-python = ">=3.10"
+dependencies = [
+    "tiktoken>=0.11.0",
+]
+
+[project.optional-dependencies]
+# For converting PyTorch models (requires nanochat to be installed separately)
+convert = [
+    "torch>=2.0.0",
+]

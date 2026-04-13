@@ -48,6 +48,20 @@ go build -o gonanochat .
 
 This produces a single ~9MB static binary with no external dependencies.
 
+### Install Python dependencies
+
+The helper scripts (data preparation, model conversion) need a few Python packages. Install them with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync
+```
+
+Or with pip:
+
+```bash
+pip install tiktoken
+```
+
 ### Train a model from scratch
 
 **Step 1: Download training data.** Grab a text corpus (here we use *The Adventures of Sherlock Holmes* from Project Gutenberg):
@@ -56,15 +70,18 @@ This produces a single ~9MB static binary with no external dependencies.
 curl -sL "https://www.gutenberg.org/cache/epub/1661/pg1661.txt" > /tmp/sherlock.txt
 ```
 
-**Step 2: Tokenize.** Convert the text into binary token format using the nanochat tokenizer, splitting 5% for validation:
+**Step 2: Tokenize.** Convert the text into binary token format, splitting 5% for validation:
 
 ```bash
-python scripts/prepare_data.py \
+uv run python scripts/prepare_data.py \
   -i /tmp/sherlock.txt \
   -o /tmp/train.bin \
   --val /tmp/val.bin \
-  --val-fraction 0.05
+  --val-fraction 0.05 \
+  --tiktoken gpt2
 ```
+
+The `--tiktoken gpt2` flag uses the GPT-2 tokenizer (50K vocab). For faster CPU training on small models, a smaller vocab is better. If you have a nanochat tokenizer trained (32K vocab), omit the `--tiktoken` flag to use it instead.
 
 **Step 3: Train.** Run the Go training loop:
 
@@ -73,13 +90,14 @@ python scripts/prepare_data.py \
   -data /tmp/train.bin \
   -val /tmp/val.bin \
   -depth 4 \
-  -vocab 32768 \
   -seq 256 \
   -batch 4 \
   -lr 1e-3 \
   -steps 5000 \
   -save-dir my_model
 ```
+
+The script prints the vocab size after tokenizing — pass it with `-vocab` if it differs from the default (32768).
 
 The `depth` flag is the single complexity dial (matching nanochat): it sets the number of transformer layers, and all other hyperparameters (width, heads, etc.) are computed automatically.
 
@@ -88,7 +106,7 @@ The `depth` flag is the single complexity dial (matching nanochat): it sets the 
 If you already have a nanochat model trained with PyTorch, convert it:
 
 ```bash
-python scripts/convert.py \
+uv run python scripts/convert.py \
   --source sft \
   -o model_export
 ```

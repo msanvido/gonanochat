@@ -19,7 +19,6 @@ import argparse
 import struct
 import sys
 import os
-import numpy as np
 
 
 def tokenize_with_nanochat(text, bos_every=0):
@@ -50,12 +49,20 @@ def tokenize_with_tiktoken(text, encoding_name):
     return tokens, enc.n_vocab
 
 
-def save_tokens(tokens, path):
-    """Save tokens as uint16 binary file."""
-    arr = np.array(tokens, dtype=np.uint16)
-    arr.tofile(path)
+def save_tokens(tokens, path, use_uint32=False):
+    """Save tokens as binary file with a small header.
+    Format: magic (2 bytes 'TK') + dtype (1 byte: 2=uint16, 4=uint32) + pad (1 byte)
+            + token data (uint16 or uint32 little-endian)
+    """
+    dtype = 4 if use_uint32 else 2
+    fmt = "I" if use_uint32 else "H"
+    with open(path, "wb") as f:
+        f.write(b"TK")                  # magic
+        f.write(struct.pack("BB", dtype, 0))  # dtype + padding
+        f.write(struct.pack(f"<{len(tokens)}{fmt}", *tokens))
+    bits = dtype * 8
     size_mb = os.path.getsize(path) / 1e6
-    print(f"Saved {len(tokens):,} tokens ({size_mb:.1f} MB) to {path}")
+    print(f"Saved {len(tokens):,} tokens as uint{bits} ({size_mb:.1f} MB) to {path}")
 
 
 def main():
@@ -80,19 +87,21 @@ def main():
     else:
         tokens, vocab_size = tokenize_with_nanochat(text)
 
-    # Check vocab fits in uint16
+    # Use uint32 if any token ID exceeds uint16 range
     max_token = max(tokens)
-    assert max_token < 65536, f"Token ID {max_token} exceeds uint16 range. Vocab too large."
+    use_uint32 = max_token >= 65536
+    if use_uint32:
+        print(f"Note: max token ID is {max_token}, using uint32 format")
 
     # Split train/val
     if args.val:
         split_idx = int(len(tokens) * (1 - args.val_fraction))
         train_tokens = tokens[:split_idx]
         val_tokens = tokens[split_idx:]
-        save_tokens(train_tokens, args.output)
-        save_tokens(val_tokens, args.val)
+        save_tokens(train_tokens, args.output, use_uint32)
+        save_tokens(val_tokens, args.val, use_uint32)
     else:
-        save_tokens(tokens, args.output)
+        save_tokens(tokens, args.output, use_uint32)
 
     print(f"\nVocab size: {vocab_size}")
     print(f"Use with: gonanochat train -data {args.output} -vocab {vocab_size}")
